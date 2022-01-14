@@ -201,7 +201,8 @@ private:
 
                 double IDF = CalcIDF(word);
                 for (const auto& [document_id, TF] : word_to_documents_freqs_.at(word)) {
-                    if (predicate(document_id, documents_.at(document_id).status, documents_.at(document_id).rating)) {
+                    const auto& document = documents_.at(document_id);
+                    if (predicate(document_id, document.status, document.rating)) {
                         doc_to_relevance[document_id] += TF * IDF;
                     }
                 }
@@ -213,7 +214,7 @@ private:
             }
             
             vector<Document> matched_documents;
-            for (auto [document_id, relevance] : doc_to_relevance) {
+            for (const auto [document_id, relevance] : doc_to_relevance) {
                 matched_documents.push_back({document_id, relevance, 
                                             documents_.at(document_id).rating, 
                                             documents_.at(document_id).status
@@ -326,8 +327,10 @@ void TestExcludeDocumentsContainingMinusWords(){
     vector<int> ratings = {1, 2, 3};
 
     server.AddDocument(42, "cute cat with collar", DocumentStatus::ACTUAL, ratings);
+    server.AddDocument(24, "white fluffy cat", DocumentStatus::ACTUAL, ratings);
     const auto found_docs = server.FindTopDocuments("white cat -collar"s);
-    ASSERT(found_docs.empty());
+    ASSERT_EQUAL(found_docs.size(), 1);
+    ASSERT_EQUAL(found_docs[0].id, 24);
 }
 
 void TestMatchDocuments() {
@@ -349,20 +352,44 @@ void TestMatchDocuments() {
     }
 }
 
-void TestSortFoundDocumentsByRelevance() {
+void TestRelevanceCalculationAndSortFoundDocumentsByRelevance() {
     SearchServer server;
     vector<int> ratings = {1, 2, 3};
-    
+
     server.AddDocument(1, "some yard cat"s, DocumentStatus::ACTUAL, ratings);
-    server.AddDocument(2, "cool cute cat"s, DocumentStatus::ACTUAL, ratings);
-    server.AddDocument(3, "cute cat with big eyes"s, DocumentStatus::ACTUAL, ratings);
-    server.AddDocument(4, "cute cat with collar"s, DocumentStatus::ACTUAL, ratings);
+    server.AddDocument(2, "cute fluffy cat"s, DocumentStatus::ACTUAL, ratings);
+    server.AddDocument(3, "cute black cat with green eyes"s, DocumentStatus::ACTUAL, ratings);
+
+    const auto found_docs = server.FindTopDocuments("cute cat"s);
+    double relevance1 = 0.0 / 3 * log( 3.0 / 2 ) + 1.0 / 3 * log( 3.0 / 3 ); //  1_st term: [doc 1 doesn't contain "cute" => TF(doc1, "cute") == 0
+                                                                             //              two docs containe "cute" => IDF("cute") == log(3/2)];  
+                                                                             //  2_nd term: [doc 1 includes "cat" once => TF(doc1, "cat") == 1/3. 
+                                                                             //              all three docs contain "cat" => IDF("cat") == log(3/3) == 0];
+                                                                             //  Overall: relevance = 1_st term + 2_nd term = 0 * log(3/2) + 1/3 * 0 = 0
+
+
+    double relevance2 = (1.0 / 3) * log( 3.0 / 2 ) + (1.0 / 3) * log( 3.0 / 3 ); //  1_st term: [doc 2 includes "cute" once => TF(doc2, "cute") == 1/3
+                                                                             //              two docs contain "cute" => IDF("cute") == log( 3/2 )];  
+                                                                             //  2_nd term: [doc 2 includes "cat" once => TF(doc2, "cat") == 1/3. 
+                                                                             //              all three docs contain "cat" => IDF("cat") == log( 3/3 ) == 0];
+                                                                             //  Overall: relevance = 1_st term + 2_nd term = 1/3 * log(3/2) + 1/3 * 0 ~ 0.135155
+
+
+    double relevance3 = (1.0 / 6) * log( 3.0 / 2 ) + (1.0 / 6) * log( 3.0 / 3); //  1_st term: [doc 3 includes "cute" once => TF(doc3, "cute") == 1/6
+                                                                             //              two docs contain "cute" => IDF("cute") == log( 3/2 )];  
+                                                                             //  2_nd term: [doc 3 includes "cat" once => TF(doc3, "cat") == 1/6. 
+                                                                             //              all three docs contain "cat" => IDF("cat") == log( 3/3 ) == 0];
+                                                                             //  Overall: relevance = 1_st term + 2_nd term = 1/6 * log(3/2) + 1/6 * 0 ~ 0.067576
+
+    // relevance(doc1) = 0; relevance(doc2) ~ 0.135155; relevance(doc3) ~ 0.067576 => after sorting by relevance found_docs should look like [doc2, doc3, doc1]. Let's see.
     
-    const auto found_docs = server.FindTopDocuments("cute cat with collar"s);
-    ASSERT_EQUAL(found_docs[0].id, 4);
-    ASSERT_EQUAL(found_docs[1].id, 3);
-    ASSERT_EQUAL(found_docs[2].id, 2);
-    ASSERT_EQUAL(found_docs[3].id, 1);
+    ASSERT(found_docs[0].id == 2);
+    ASSERT(found_docs[1].id == 3);
+    ASSERT(found_docs[2].id == 1);
+
+    ASSERT_EQUAL(found_docs[0].relevance, relevance2);
+    ASSERT_EQUAL(found_docs[1].relevance, relevance3);
+    ASSERT_EQUAL(found_docs[2].relevance, relevance1);
 }
 
 void TestCalculateDocumentRating() {
@@ -379,24 +406,26 @@ void TestFilterDocumentsByUsersPredicate() {
     SearchServer server;
     vector<int> ratings = {1, 2, 3};
     
-    server.AddDocument(1, "some yard cat"s, DocumentStatus::IRRELEVANT, ratings);
+    server.AddDocument(1, "some yard cat"s, DocumentStatus::ACTUAL, ratings);
     server.AddDocument(2, "white fluffy cat"s, DocumentStatus::IRRELEVANT, ratings);
     server.AddDocument(3, "cute cat with big eyes"s, DocumentStatus::ACTUAL, ratings);
-    server.AddDocument(4, "cute cat with collar"s, DocumentStatus::IRRELEVANT, ratings);
+    server.AddDocument(4, "cute cat with collar"s, DocumentStatus::ACTUAL, ratings);
 
     {
         const auto found_docs = server.FindTopDocuments("cat"s, [](int document_id, DocumentStatus status, 
                                                                     int rating) { return document_id % 2 == 0; }
                                                             );
         ASSERT_EQUAL(found_docs.size(), 2);
+        ASSERT_EQUAL(found_docs[0].id, 2);
+        ASSERT_EQUAL(found_docs[1].id, 4);
     }
 
     {
         const auto found_docs = server.FindTopDocuments("cat"s, [](int document_id, DocumentStatus status, 
                                                                     int rating) { return status == DocumentStatus::IRRELEVANT; }
                                                             );
-        ASSERT_EQUAL(found_docs.size(), 3);
-        ASSERT_EQUAL(found_docs[0].id, 1);
+        ASSERT_EQUAL(found_docs.size(), 1);
+        ASSERT_EQUAL(found_docs[0].id, 2);
     }
 }
 
@@ -407,21 +436,23 @@ void TestFindDocumentsWithSpecificStatus() {
     server.AddDocument(1, "some yard cat"s, DocumentStatus::BANNED, ratings);
     server.AddDocument(2, "white fluffy cat"s, DocumentStatus::IRRELEVANT, ratings);
     server.AddDocument(3, "cute cat with big eyes"s, DocumentStatus::ACTUAL, ratings);
-    server.AddDocument(4, "cute cat with collar"s, DocumentStatus::IRRELEVANT, ratings);
 
     {
         const auto found_docs = server.FindTopDocuments("cat"s, DocumentStatus::ACTUAL);
         ASSERT_EQUAL(found_docs.size(), 1);
+        ASSERT_EQUAL(found_docs[0].id, 3);
     }
 
     {
         const auto found_docs = server.FindTopDocuments("cat"s, DocumentStatus::IRRELEVANT);
-        ASSERT_EQUAL(found_docs.size(), 2);
+        ASSERT_EQUAL(found_docs.size(), 1);
+        ASSERT_EQUAL(found_docs[0].id, 2);
     }
 
     {
         const auto found_docs = server.FindTopDocuments("cat"s, DocumentStatus::BANNED);
         ASSERT_EQUAL(found_docs.size(), 1);
+        ASSERT_EQUAL(found_docs[0].id, 1);
     }
 }
 
@@ -432,7 +463,7 @@ void TestSearchServer() {
     RUN_TEST(TestAddDocument);
     RUN_TEST(TestExcludeDocumentsContainingMinusWords);
     RUN_TEST(TestMatchDocuments);
-    RUN_TEST(TestSortFoundDocumentsByRelevance);
+    RUN_TEST(TestRelevanceCalculationAndSortFoundDocumentsByRelevance);
     RUN_TEST(TestCalculateDocumentRating);
     RUN_TEST(TestFilterDocumentsByUsersPredicate);
     RUN_TEST(TestFindDocumentsWithSpecificStatus);
