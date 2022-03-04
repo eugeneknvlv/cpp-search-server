@@ -37,17 +37,17 @@ int main() {
     // слова из разных документов, не является дубликатом
     AddDocument(search_server, 9, "nasty rat with curly hair"s, DocumentStatus::ACTUAL, {1, 2});
     
-    // cout << "Before duplicates removed: "s << search_server.GetDocumentCount() << endl;
-    // RemoveDuplicates(search_server);
-    // cout << "After duplicates removed: "s << search_server.GetDocumentCount() << endl;
+    cout << "Before duplicates removed: "s << search_server.GetDocumentCount() << endl;
+    RemoveDuplicates(search_server);
+    cout << "After duplicates removed: "s << search_server.GetDocumentCount() << endl;
 
 
-    const auto search_results = search_server.FindTopDocuments("pet"s);
-    const auto pages = Paginate(search_results, 2);
+    // const auto search_results = search_server.FindTopDocuments("pet"s);
+    // const auto pages = Paginate(search_results, 2);
 
-    // Выводим найденные документы по страницам
-    for (auto page = pages.begin(); page != pages.end(); ++page) {
-        cout << *page << endl;
-        cout << "Page break"s << endl;
-    }
+    // // Выводим найденные документы по страницам
+    // for (auto page = pages.begin(); page != pages.end(); ++page) {
+    //     cout << *page << endl;
+    //     cout << "Page break"s << endl;
+    // }
 }

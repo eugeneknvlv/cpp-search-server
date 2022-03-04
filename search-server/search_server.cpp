@@ -25,13 +25,12 @@ void SearchServer::AddDocument(int document_id, const string& document, Document
     const double inv_word_count = 1.0 / words.size();           
     for (const string& word : words) {
         word_to_documents_freqs_[word][document_id] += inv_word_count;  // calculating Term Frequency
-        document_id_to_word_freqs_[document_id][word] += inv_word_count;  
-        documents_content_[document_id].insert(word);       
+        document_id_to_word_freqs_[document_id][word] += inv_word_count;       
     }
     int rating = ComputeAverageRating(marks);
     DocumentProperties properties = {rating, status};
     documents_.emplace(document_id, properties);
-    document_ids_.push_back(document_id);
+    document_ids_.insert(document_id);
 }
 
 std::vector<Document> SearchServer::FindTopDocuments(const std::string& raw_query, DocumentStatus doc_status) const {
@@ -50,7 +49,6 @@ std::vector<Document> SearchServer::FindTopDocuments(const std::string& raw_quer
 
 
 tuple<vector<string>, DocumentStatus> SearchServer::MatchDocument(const string& raw_query, int document_id) const {
-    LOG_DURATION_STREAM("Operation time"s, cerr);
     Query query = ParseQuery(raw_query);
 
     vector<string> matched_words;
@@ -81,18 +79,18 @@ int SearchServer::GetDocumentCount() const {
     return documents_.size();
 }
 
-std::vector<int>::const_iterator SearchServer::begin() const {
+std::set<int>::const_iterator SearchServer::begin() const {
     return document_ids_.begin();
 }
 
-std::vector<int>::const_iterator SearchServer::end() const {
+std::set<int>::const_iterator SearchServer::end() const {
     return document_ids_.end();
 }
 
 
 const std::map<std::string, double>& SearchServer::GetWordFrequencies(int document_id) const {
     static const map<string, double> empty_map = {};
-    if(!binary_search(document_ids_.begin(), document_ids_.end(), document_id)) {
+    if(document_id_to_word_freqs_.find(document_id) == document_id_to_word_freqs_.end()) {
         return empty_map;
     }
     return document_id_to_word_freqs_.at(document_id);
@@ -112,22 +110,6 @@ void SearchServer::RemoveDocument(int document_id) {
         doc_ids_to_TFs.erase(document_id);
     }
 
-    documents_content_.erase(document_id);
-}
-
-
-vector<int> SearchServer::FindDuplicates() {
-    set< set<string> > already_seen_docs;
-    vector<int> ids_to_erase;
-    for (const auto& [id, content] : documents_content_) {
-        if (count(already_seen_docs.begin(), already_seen_docs.end(), content)) {
-            ids_to_erase.push_back(id);
-        }
-        else {
-            already_seen_docs.insert(content);
-        }
-    }
-    return ids_to_erase;
 }
 
 
