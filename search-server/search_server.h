@@ -35,6 +35,8 @@ public:
 
         void RemoveDocument(int document_id);
 
+        template <typename ExecutionPolicy>
+        void RemoveDocument(ExecutionPolicy&& policy, int document_id);
 
 private:
 
@@ -135,4 +137,28 @@ std::vector<Document> SearchServer::FindAllDocuments(const Query& query, Predica
     }
 
     return matched_documents;
+}
+
+
+template <typename ExecutionPolicy>
+void SearchServer::RemoveDocument(ExecutionPolicy&& policy, int document_id) {
+
+    if (document_id_to_word_freqs_.count(document_id) == 0) {
+        return;
+    }
+
+    document_id_to_word_freqs_.erase(document_id);
+
+    std::vector<int> vector_ids(document_ids_.begin(), document_ids_.end());
+    auto pos = find(policy, vector_ids.begin(), vector_ids.end(), document_id);
+    vector_ids.erase(pos);
+    std::set<int> new_doc_ids(vector_ids.begin(), vector_ids.end());
+    document_ids_ = new_doc_ids;
+
+    documents_.erase(document_id);
+
+    for (auto& [word, doc_ids_to_TFs] : word_to_documents_freqs_) {
+        doc_ids_to_TFs.erase(document_id);
+    }
+
 }
