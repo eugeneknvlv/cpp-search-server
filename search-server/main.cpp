@@ -67,8 +67,8 @@ void Test(string_view mark, SearchServer search_server, ExecutionPolicy&& policy
 int main() {
     mt19937 generator;
 
-    const auto dictionary = GenerateDictionary(generator, 10'000, 25);
-    const auto documents = GenerateQueries(generator, dictionary, 10'000, 100);
+    const auto dictionary = GenerateDictionary(generator, 3'500, 25);
+    const auto documents = GenerateQueries(generator, dictionary, 3'500, 100);
 
     {
         SearchServer search_server(dictionary[0]);

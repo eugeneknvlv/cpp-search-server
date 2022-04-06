@@ -99,16 +99,35 @@ const std::map<std::string, double>& SearchServer::GetWordFrequencies(int docume
 
 void SearchServer::RemoveDocument(int document_id) {
 
-    document_id_to_word_freqs_.erase(document_id);
+    if (document_id_to_word_freqs_.count(document_id) == 0) {
+        return;
+    }
 
-    auto pos = find(document_ids_.begin(), document_ids_.end(), document_id);
-    document_ids_.erase(pos);
+    /* { {word, TF}, {word, TF}, ... } */
+    std::vector< std::pair<std::string, double> > words_and_it_freqs(
+        (document_id_to_word_freqs_.at(document_id)).begin(), (document_id_to_word_freqs_.at(document_id)).end());
+
+    std::for_each(
+        words_and_it_freqs.begin(),
+        words_and_it_freqs.end(),
+        [&](const std::pair<std::string, double>& word_freq) {
+            word_to_documents_freqs_[word_freq.first].erase(document_id);     
+        }
+    );
+
+    // std::vector<int> vector_ids(document_ids_.begin(), document_ids_.end());
+    // auto pos = find(policy, vector_ids.begin(), vector_ids.end(), document_id);
+    // vector_ids.erase(pos);
+    // std::set<int> new_doc_ids(vector_ids.begin(), vector_ids.end());
+    // document_ids_ = new_doc_ids;
 
     documents_.erase(document_id);
+    document_ids_.erase(document_id);
+    document_id_to_word_freqs_.erase(document_id);
 
-    for (auto& [word, doc_ids_to_TFs] : word_to_documents_freqs_) {
-        doc_ids_to_TFs.erase(document_id);
-    }
+    // for (auto& [word, doc_ids_to_TFs] : word_to_documents_freqs_) {
+    //     doc_ids_to_TFs.erase(document_id);
+    // }
 
 }
 
