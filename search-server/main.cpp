@@ -1,12 +1,12 @@
 #include "search_server.h"
+#include "process_queries.h"
+#include "log_duration.h"
 
 #include <execution>
 #include <iostream>
 #include <random>
 #include <string>
 #include <vector>
-
-#include "log_duration.h"
 
 using namespace std;
 
@@ -15,7 +15,7 @@ string GenerateWord(mt19937& generator, int max_length) {
     string word;
     word.reserve(length);
     for (int i = 0; i < length; ++i) {
-        word.push_back(uniform_int_distribution('a', 'z')(generator));
+        word.push_back(uniform_int_distribution(97, 122)(generator));
     }
     return word;
 }
@@ -26,17 +26,18 @@ vector<string> GenerateDictionary(mt19937& generator, int word_count, int max_le
     for (int i = 0; i < word_count; ++i) {
         words.push_back(GenerateWord(generator, max_length));
     }
-    sort(words.begin(), words.end());
     words.erase(unique(words.begin(), words.end()), words.end());
     return words;
 }
 
-string GenerateQuery(mt19937& generator, const vector<string>& dictionary, int max_word_count) {
-    const int word_count = uniform_int_distribution(1, max_word_count)(generator);
+string GenerateQuery(mt19937& generator, const vector<string>& dictionary, int word_count, double minus_prob = 0) {
     string query;
     for (int i = 0; i < word_count; ++i) {
         if (!query.empty()) {
             query.push_back(' ');
+        }
+        if (uniform_real_distribution<>(0, 1)(generator) < minus_prob) {
+            query.push_back('-');
         }
         query += dictionary[uniform_int_distribution<int>(0, dictionary.size() - 1)(generator)];
     }
@@ -53,37 +54,35 @@ vector<string> GenerateQueries(mt19937& generator, const vector<string>& diction
 }
 
 template <typename ExecutionPolicy>
-void Test(string_view mark, SearchServer search_server, ExecutionPolicy&& policy) {
+void Test(string_view mark, const SearchServer& search_server, const vector<string>& queries, ExecutionPolicy&& policy) {
     LOG_DURATION(mark);
-    const int document_count = search_server.GetDocumentCount();
-    for (int id = 0; id < document_count; ++id) {
-        search_server.RemoveDocument(policy, id);
+    double total_relevance = 0;
+    for (const string_view query : queries) {
+        for (const auto& document : search_server.FindTopDocuments(policy, query)) {
+            total_relevance += document.relevance;
+        }
     }
-    cout << search_server.GetDocumentCount() << endl;
+    cout << total_relevance << endl;
 }
 
-#define TEST(mode) Test(#mode, search_server, execution::mode)
+#define TEST(policy) Test(#policy, search_server, queries, execution::policy)
+
 
 int main() {
     mt19937 generator;
 
-    const auto dictionary = GenerateDictionary(generator, 3'500, 25);
-    const auto documents = GenerateQueries(generator, dictionary, 3'500, 100);
+    const auto dictionary = GenerateDictionary(generator, 1000, 10);
+    const auto documents = GenerateQueries(generator, dictionary, 1'000, 70);
 
-    {
-        SearchServer search_server(dictionary[0]);
-        for (size_t i = 0; i < documents.size(); ++i) {
-            search_server.AddDocument(i, documents[i], DocumentStatus::ACTUAL, {1, 2, 3});
-        }
-
-        TEST(seq);
+    SearchServer search_server(dictionary[0]);
+    for (size_t i = 0; i < documents.size(); ++i) {
+        search_server.AddDocument(i, documents[i], DocumentStatus::ACTUAL, { 1, 2, 3 });
     }
-    {
-        SearchServer search_server(dictionary[0]);
-        for (size_t i = 0; i < documents.size(); ++i) {
-            search_server.AddDocument(i, documents[i], DocumentStatus::ACTUAL, {1, 2, 3});
-        }
 
-        TEST(par);
-    }
+    const auto queries = GenerateQueries(generator, dictionary, 100, 70);
+
+    TEST(seq);
+    TEST(par);
+
+    system("pause");
 }
